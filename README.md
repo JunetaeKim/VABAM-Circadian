@@ -2,7 +2,7 @@
 
 **A spin-off of [VABAM](https://github.com/JunetaeKim/VABAM-official): shape–amplitude decoupling applied to circadian bioluminescence reporter recordings.**
 
-VABAM (Variational Autoencoder for Amplitude-based Biosignal Augmentation within Morphological Shape) separates an amplitude code θ (cut-off frequencies of a cascaded filter) from a shape code z (latent variables). It was developed for pulsatile physiological signals sampled at 100 Hz (ABP, ECG). This repository transfers the same model to a different time scale and domain: **~24-h circadian rhythms of *Bmal1*- and *Per2*-luciferase reporters recorded every 10 min in cancer cell lines**.
+VABAM (Variational Autoencoder for Amplitude-based Biosignal Augmentation within Morphological Shape) separates an amplitude code θ (cut-off frequencies of a cascaded filter) from a shape code z (latent variables). It was developed for beat-to-beat pulsatile physiological signals (ABP, ECG). This repository transfers the same model to a different time scale and domain: **~24-h circadian rhythms of *Bmal1*- and *Per2*-luciferase reporters recorded every 10 min in cancer cell lines**.
 
 The official VABAM code is used unchanged: this repository imports it and never modifies or writes into it.
 
