@@ -6,6 +6,13 @@ VABAM (Variational Autoencoder for Amplitude-based Biosignal Augmentation within
 
 The official VABAM code is used unchanged: this repository imports it and never modifies or writes into it.
 
+<p align="center">
+  <img src="docs/figures/overview.png" width="100%" alt="VABAM-Circadian overview">
+</p>
+
+**(a)** LumiCycle recording of one cell line with a 66.7-h model input window (shaded). **(b)** The window (grey), its reconstruction (dashed) and generations at fixed shape code z with the amplitude code θ<sub>L</sub> swept from 0.05 to 0.95: amplitude changes while phase and period are kept. **(c)** Generated amplitude relative to θ<sub>L</sub> = 0.5 across all validation windows (median and interquartile range).
+
+
 ## What the spin-off adds
 
 - **Time-scale transfer.** The filter cut-off range (`FcLimit`) is re-derived for 10-min sampling so that θ spans the circadian fundamental and its 12-h harmonic. With the official `FcLimit = 1.0`, every cut-off lies far above the circadian band and θ controls nothing (`python run.py filters`, [docs/design_decisions.md](docs/design_decisions.md)).
