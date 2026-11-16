@@ -1,0 +1,77 @@
+# Parameter search for VABAM on circadian recordings (configuration B data, window 400).
+# Driven from notebooks/03_param_search.ipynb; workers run in terminals:  python run.py sweep --stage s1 --worker 0 --nworkers 4 --gpu 0
+#
+# Rules (fixed before any run):
+#  * Selection uses ONLY label-free metrics on the MSB validation records that are not U2OS
+#    (reconstruction and theta control). Genotype results and the external sets E1-E3 are never used to choose.
+#  * Every run validates / early-stops on the same MSB validation windows (ValSources: [msb2025]).
+#  * Later stages are planned from earlier ones with --freeze (plan.json); every worker runs the same plan.
+
+results_dir: results/sweep
+base_model: SKZFC_CIRC_1_30_200_MULTI        # all parameters inherited from configs/circadian_vabam.yml
+common_overrides:
+  ValSources: [msb2025]
+
+selection:
+  n_eval_windows: 600          # MSB validation windows (non-U2OS) used for reconstruction metrics (all if fewer)
+  n_sweep: 200                 # windows used for the theta_L sweep
+  sweep_theta: [0.05, 0.25, 0.5, 0.75, 0.95]
+  control_pass: {amp_ratio_min: 1.5, ctrl_min: 0.8, shape_min: 0.95}   # per window
+  criteria: [recon_r2, control_pass, shape_keep, amp_ratio, thetaL_ctrl]   # all higher = better; rank-sum
+
+hosts:                         # host -> GPU ids; used only to print worker commands
+  PC1: [0, 1]
+  PC2: [0, 1]
+per_gpu: 1                     # one training process per RTX 4090 (one process already saturates the GPU)
+
+stages:
+  smoke:                       # 2-minute pipeline check (CPU is fine): python run.py sweep --stage smoke --worker 0 --nworkers 1
+    description: pipeline check, 2 runs x 2 epochs
+    epochs: 2
+    patience: 2
+    seeds: [0]
+    eval: {n_eval_windows: 60, n_sweep: 20}
+    grid:
+      data: {POP: {SourceWeights: {msb2025: 1.0}}, MULTI: {SourceWeights: {msb2025: 0.5, circascope2021: 0.5}}}
+
+  bench:                       # throughput only, one GPU, one terminal (~5 min):  python run.py sweep --stage bench --worker 0 --nworkers 1 --gpu 0
+    description: speed of batch size / XLA on MULTI data, 4 epochs each, no evaluation
+    epochs: 4
+    patience: 4
+    seeds: [0]
+    eval: false
+    grid:
+      setting:
+        B1024: {BatSize: 1024}
+        B2048: {BatSize: 2048}
+        B4096: {BatSize: 4096}
+        B1024_XLA: {BatSize: 1024, XLA: true}
+
+  s1:
+    description: data mix x cut-off range x latent size (12 runs, short)
+    epochs: 200
+    patience: 60
+    seeds: [0]
+    grid:
+      data: {POP: {SourceWeights: {msb2025: 1.0}}, MULTI: {SourceWeights: {msb2025: 0.5, circascope2021: 0.5}}}
+      FcLimit: {FC8: 0.0208333, FC12: 0.0138889}
+      LatDim: {Z10: 10, Z30: 30, Z50: 50}
+
+  s2:
+    description: loss settings, one factor at a time, around the best 2 of s1 (8 runs, short)
+    from: {stages: [s1], top_k: 2}
+    epochs: 200
+    patience: 60
+    seeds: [0]
+    variants:
+      CZ001: {Capacity_Z: 0.01}
+      CZ02: {Capacity_Z: 0.2}
+      WF1: {MnWFeat: 1, MxWFeat: 1}
+      WF4: {MnWFeat: 4, MxWFeat: 4}
+
+  s3:
+    description: confirm the best 3 of s1+s2, 3 seeds, full length (9 runs)
+    from: {stages: [s1, s2], top_k: 3}
+    epochs: 800
+    patience: 100
+    seeds: [0, 1, 2]

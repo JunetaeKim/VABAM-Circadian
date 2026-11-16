@@ -1,0 +1,244 @@
+# VABAM-Circadian — VABAM on circadian bioluminescence reporter recordings
+# Relative paths are relative to the repository root. Nothing is written outside the repository.
+
+default_model: SKZFC_CIRC_1_30_200        # model used by run.py when --model is not given
+
+paths:
+  vabam_root: ../VABAM-official          # official code, import only; overridden by the VABAM_ROOT environment variable
+  processed: data/processed
+  results: results
+
+data:
+  dt_min: 10.0                           # LumiCycle sampling interval [min]
+  sources:
+    msb2025:                             # Ector et al. 2025 Mol Syst Biol, Figshare 28212131 (verified format)
+      enabled: true
+      kind: msb2025_raw
+      path: data/raw/msb2025_breast_cancer/raw_lumicycle_data.xlsx
+      sheet: raw_truncated               # authors' common window 5.0-142.67 h, 827 samples, 180 traces
+    natcomm2024:                         # Ector et al. 2024 Nat Commun, Figshare 24297496 (verified 2026-11-16)
+      enabled: false                     # 135/164 traces duplicate MSB 2025; the 29 new ones enter via multi.external
+      kind: natcomm2024
+      path: data/raw/natcommun2024_tod/circadian_time_series_data.xlsx
+      keep_audit: results/data_audit/natcomm2024_vs_msb2025.csv
+  authors_processed:                     # used only to check our detrending against the authors' pyBOAT output
+    path: data/raw/msb2025_breast_cancer/processed_lumicycle_data_github.xlsx
+
+preprocess:
+  tag: msb_rel_L400_S18
+  resetting: [Dex_1uM, Dex_1.5uM, serum_shock]   # keep all synchronisation protocols
+  detrend:
+    method: sinc
+    T_c_h: 48.0                          # cut-off period of the trend (authors' setting)
+  normalize:
+    method: relative                     # relative | envelope | zscore  (see src/preprocess.py)
+    envelope_window_h: 48.0
+  window:
+    length_samples: 400                  # 66.7 h = 2.8 cycles at 24 h (2.2-3.3 cycles for 20-30 h periods)
+    stride_samples: 18                   # 3 h; 24 windows per complete trace
+  scale_quantile: 0.995                  # |x| quantile on training windows mapped to 0 / 1
+  split:
+    val_frac: 0.15                       # by trace, stratified by cell line/genotype
+    seed: 0
+    exclude_labels: []                   # e.g. [U2OS, U2OS_CRY1_sKO, U2OS_CRY1_2_dKO] to hold U2OS out entirely
+
+# ---------------------------------------------------------------------------------------------
+# Configuration B (2026-11-16): multi-source training pool + external test sets.  python run.py multi
+# Train/val (90/10, split by trace or cell): MSB 2025 + Circa-SCOPE RawData_1/2.
+# External (never used for training, scaling or selection): E1 Circa-SCOPE RawData_7 (separate experiment file),
+# E2 Nat Commun 2024 traces not duplicated in MSB (GIMEN, SH-SY5Y), E3 HES1 single-cell tracks >= 66.7 h.
+# Strides define the reported window counts (training draws random windows from this pool each epoch).
+# ---------------------------------------------------------------------------------------------
+multi:
+  tag: multi_v1
+  window: 400
+  val_frac: 0.10
+  seed: 0
+  scale_quantile: 0.995
+  min_trend_ratio: 0.1                 # QC: exclude records whose trend min < 0.1 x trend median (list saved)
+  train_sources:
+    msb2025:
+      path: data/raw/msb2025_breast_cancer/raw_lumicycle_data.xlsx
+      stride_samples: 1                # 10 min (native)
+      scale_group: pop
+    circascope2021:
+      files: [data/raw/circascope2021/RawData_1.xlsx, data/raw/circascope2021/RawData_2.xlsx]
+      stride_samples: 6                # 1 h (native sampling; finer strides only shift interpolated values)
+      pre_end_h: 108                   # drug/serum added at 4.5 days = 108 h after imaging start
+      post_start_h: 120                # skip the first 12 h after addition
+      scale_group: sc
+  external:
+    E1_circascope_RawData7:
+      kind: circascope
+      files: [data/raw/circascope2021/RawData_7.xlsx]
+      stride_samples: 6
+      scale_group: sc
+    E2_natcomm2024_new_lines:
+      kind: natcomm2024
+      path: data/raw/natcommun2024_tod/circadian_time_series_data.xlsx
+      keep_audit: results/data_audit/natcomm2024_vs_msb2025.csv
+      stride_samples: 1
+      scale_group: pop
+    E3_hes1_long_tracks:
+      kind: hes1
+      path: data/raw/hes1_sabherwal2021/Sabherwal et al 2021_main figs_raw data.xlsx
+      sheets: [["Control for CoCl2 experiment", 2], ["mVenus-Hes1 gen1 dividing cells", 3]]
+      min_hours: 66.6
+      stride_samples: 3                # 30 min (native 15-30 min)
+      scale_group: sc
+
+# ---------------------------------------------------------------------------------------------
+# VABAM parameters. Same layout as the official Config/*.yml (Common_Param + Models); keys inside a
+# model override Common_Param. Only what the circadian time scale requires was changed; every other
+# value is the official ConfigART800 / ConfigII800 setting.
+#
+# Cut-off frequency range (FcLimit)
+#   VABAM cut-offs are in cycles/sample and theta in (0, 1) is mapped to (0, FcLimit); the lower end is
+#   fixed at 0 in the official Encoder, so FcLimit is the range. With 10-min sampling a 24-h rhythm is at
+#   1/144 = 0.00694 cycles/sample. The official FcLimit 1.0 puts every cut-off far above the circadian band:
+#   the LPF gain at 24 h is 1.00 for every theta, i.e. theta would not control anything
+#   (python -m src.filter_response, docs/design_decisions.md).
+#   FcLimit = dt/8h = 0.0208333 -> cut-off period from infinity (theta->0) down to 8 h (theta->1).
+#   Depth 1 (kernel 201 samples = 33.5 h): LPF gain at 24 h goes 0.17 -> 1.00 and at the 12-h harmonic
+#   0.00 -> 0.96 as theta goes 0.05 -> 0.95, so theta spans the fundamental and its first harmonic.
+#   A 24-h-centred alternative (FcLimit = dt/12h = 0.0138889: theta = 0.5 <-> 24-h cut-off) is kept as
+#   model SKZFC_CIRC_1_30_200_FC12. Depth 2 (kernel 101 samples) resolves the circadian band poorly
+#   (LPF gain at 24 h never below 0.67), so Depth 1 is the default.
+# ---------------------------------------------------------------------------------------------
+vabam:
+  Common_Param:
+    SigType: CIRC          # label only; used for the results/ckpt/<SigType>/ sub-folder
+    CompSize: 200          # with SigDim 400 the only valid value (multiple of 100, divisible by SigDim/50 = 8)
+    MaskingRate: 0.00
+    NoiseStd: 0.00
+    MaskStd: 0.00
+    ReparaStd: 0.1
+    Capacity_Z: 0.05
+    Capacity_Fc: 0.005
+    FcLimit: 0.0208333     # = (10 min / 60) / 8 h  [cycles/sample]   (official: 1.0)
+    DecayH: 0.00
+    DecayL: 0.00
+
+    BatSize: 256           # official 3000; ~5k training windows here
+    NEpochs: 1500          # official 5000; early stopping below
+    LossType: 'Default'
+
+    WRec: 1
+    WFeat: 1
+    WZ: 1
+    WFC: 1
+    MnWRec: 1
+    MnWFeat: 2
+    MnWZ: 0.00001
+    MnWFC: 1.0
+    MxWRec: 1
+    MxWFeat: 2
+    MxWZ: 0.00001
+    MxWFC: 1.0
+
+  Models:
+    SKZFC_CIRC_1_30_200:
+      DataSource: msb_rel_L400_S18
+      LatDim: 30
+      Depth: 1
+      SpecLosses: ['SKZ', 'FC']
+
+    SKZFC_CIRC_1_30_200_FC12:
+      DataSource: msb_rel_L400_S18
+      LatDim: 30
+      Depth: 1
+      FcLimit: 0.0138889   # = (10 min / 60) / 12 h
+      SpecLosses: ['SKZ', 'FC']
+
+    SKZFC_CIRC_2_30_200:
+      DataSource: msb_rel_L400_S18
+      LatDim: 30
+      Depth: 2
+      SpecLosses: ['SKZ', 'FC']
+
+    # ---- parallel experiment set (2026-11-16). Selection between them uses label-free criteria only
+    #      (python run.py select), never genotype separation.
+    # Sampling: fixed = precomputed 3-h-stride windows (above models)
+    #           random_crop = every epoch CropsPerTrace random contiguous windows from EACH training trace
+    #                         (trace-balanced); validation windows identical to 'fixed'.
+    SKZFC_CIRC_1_30_200_RC:          # same batch and same updates/epoch as the baseline
+      DataSource: msb_rel_L400_S18
+      LatDim: 30
+      Depth: 1
+      SpecLosses: ['SKZ', 'FC']
+      Sampling: random_crop
+      CropsPerTrace: 24              # 150 traces x 24 = 3600 windows/epoch (baseline: 3598)
+
+    SKZFC_CIRC_1_30_200_RCB:         # fast setting: 4x batch, 4x windows per epoch, same steps per epoch
+      DataSource: msb_rel_L400_S18
+      LatDim: 30
+      Depth: 1
+      SpecLosses: ['SKZ', 'FC']
+      Sampling: random_crop
+      CropsPerTrace: 96
+      BatSize: 1024
+      NEpochs: 800
+      Patience: 100
+
+    SKZFC_CIRC_1_30_200_FC12_RCB:    # FcLimit 12 h, fast setting
+      DataSource: msb_rel_L400_S18
+      LatDim: 30
+      Depth: 1
+      FcLimit: 0.0138889
+      SpecLosses: ['SKZ', 'FC']
+      Sampling: random_crop
+      CropsPerTrace: 96
+      BatSize: 1024
+      NEpochs: 800
+      Patience: 100
+
+    # ---- configuration B models (data: data/processed/multi_v1/). Sampling: pool = every epoch EpochWindows
+    #      random windows from the training pool, drawn by source with SourceWeights.
+    SKZFC_CIRC_1_30_200_POP:         # population bioluminescence only (MSB)
+      DataSource: multi_v1
+      LatDim: 30
+      Depth: 1
+      SpecLosses: ['SKZ', 'FC']
+      Sampling: pool
+      SourceWeights: {msb2025: 1.0}
+      EpochWindows: 32768
+      BatSize: 1024
+      NEpochs: 800
+      Patience: 100
+
+    SKZFC_CIRC_1_30_200_MULTI:       # MSB + Circa-SCOPE single cells, 50:50 per epoch
+      DataSource: multi_v1
+      LatDim: 30
+      Depth: 1
+      SpecLosses: ['SKZ', 'FC']
+      Sampling: pool
+      SourceWeights: {msb2025: 0.5, circascope2021: 0.5}
+      EpochWindows: 32768
+      BatSize: 1024
+      NEpochs: 800
+      Patience: 100
+
+    SKZFC_CIRC_1_30_200_L500_RCB:    # 500-sample window (83.3 h, 3.5 cycles), kernel 301 = 50.2 h, fast setting
+      DataSource: msb_rel_L500_S18
+      LatDim: 30
+      Depth: 1
+      CompSize: 200
+      SpecLosses: ['SKZ', 'FC']
+      Sampling: random_crop
+      CropsPerTrace: 96
+      BatSize: 1024
+      NEpochs: 800
+      Patience: 100
+
+train:
+  seed: 0
+  patience: 150            # epochs without improvement of max(val_FeatRecLoss, val_OrigRecLoss)
+
+exp01:
+  # U-2 OS wild type vs CRY1 single KO vs CRY1/2 double KO, Bmal1-Luc only (KOs have no Per2 reporter)
+  groups:
+    WT: {cell_line: U2OS, genotype: WT, reporter: Bmal1}
+    CRY1_sKO: {cell_line: U2OS, genotype: CRY1_sKO, reporter: Bmal1}
+    CRY1_2_dKO: {cell_line: U2OS, genotype: CRY1_2_dKO, reporter: Bmal1}
+  n_permutations: 5000
+  theta_sweep: [0.05, 0.25, 0.5, 0.75, 0.95]
