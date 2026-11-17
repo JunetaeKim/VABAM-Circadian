@@ -19,7 +19,7 @@ import argparse, json, re, warnings
 import numpy as np, pandas as pd
 from scipy.stats import spearmanr, rankdata
 
-from .common import ROOT, EXT, PROC, outdir
+from src.data.external import ROOT, EXT, PROC, outdir
 
 warnings.filterwarnings("ignore")
 DT = 1 / 6.0

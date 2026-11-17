@@ -25,14 +25,14 @@ Output: results/model_selection.csv, results/model_selection.json
 import argparse
 import json
 
-from . import vabam_bridge as vb  # before tensorflow
+from src import vabam_bridge as vb  # before tensorflow
 
 import numpy as np
 import pandas as pd
 import yaml
 
-from .exp01_u2os_cry import cosinor_periodogram, encode_generate, generate, load_parts, to_rel
-from .train import load_windows
+from src.analysis.exp01_u2os_cry import cosinor_periodogram, encode_generate, generate, load_parts, to_rel
+from src.model.train import load_windows
 
 CRITERIA = [("recon_r2", False), ("amp_ratio", False), ("thetaL_ctrl", False), ("shape_keep", False)]
 # (name, lower_is_better)

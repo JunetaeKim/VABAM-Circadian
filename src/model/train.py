@@ -1,7 +1,7 @@
 """
 Train VABAM (official ModelCall / DCLCall, unchanged) on preprocessed circadian windows.
 
-    python -m src.train --config configs/circadian_vabam.yml --model SKZFC_CIRC_1_30_200
+    python -m src.model.train --config configs/circadian_vabam.yml --model SKZFC_CIRC_1_30_200
 
 Writes only under results/:
     results/ckpt/<SigType>/<model>.hdf5      best model (RelLossWeight, max of val_FeatRecLoss/val_OrigRecLoss)
@@ -15,7 +15,7 @@ import os
 import random
 import time
 
-from . import vabam_bridge as vb  # must be imported before tensorflow
+from src import vabam_bridge as vb  # must be imported before tensorflow
 
 import numpy as np
 import pandas as pd

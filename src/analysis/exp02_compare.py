@@ -7,7 +7,7 @@ taken from the first summary for reference.
 """
 import json
 import numpy as np, pandas as pd
-from .common import RES, outdir
+from src.data.external import RES, outdir
 
 
 def pick(recs, key, val, field):

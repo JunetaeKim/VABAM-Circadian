@@ -4,7 +4,7 @@ Experiment 01 — U-2 OS wild type vs CRY1 single KO vs CRY1/2 double KO (Bmal1-
 Question: are VABAM's amplitude code (theta, filter cut-offs) and shape code (z, latent) different between
 the genotypes, and do the two codes carry different information on circadian recordings?
 
-    python -m src.exp01_u2os_cry --config configs/circadian_vabam.yml --model SKZFC_CIRC_1_30_200
+    python -m src.analysis.exp01_u2os_cry --config configs/circadian_vabam.yml --model SKZFC_CIRC_1_30_200
 
 Design
   * Codes come from the trained model run deterministically (Reparam=False): z = Z_Mu, theta = FC_Mu
@@ -24,13 +24,13 @@ import itertools
 import json
 import os
 
-from . import vabam_bridge as vb  # before tensorflow
+from src import vabam_bridge as vb  # before tensorflow
 
 import numpy as np
 import pandas as pd
 import yaml
 
-from .train import load_windows
+from src.model.train import load_windows
 
 GROUP_COLORS = {"WT": "#1f77b4", "CRY1_sKO": "#d62728", "CRY1_2_dKO": "#7f7f7f"}
 
@@ -213,8 +213,8 @@ def main():
     U["rel_amp_rms"] = np.sqrt(2) * Xn[iU].std(1)
 
     # brightness: mean luminescence trend under each window (raw RLU; relative normalisation divides it out)
-    from .loader import load_traces
-    from .preprocess import normalise_trace
+    from src.data.loader import load_traces
+    from src.data.preprocess import normalise_trace
 
     ts = load_traces(cfg, root=vb.SPINOFF_ROOT)
     stride = int(scal["stride_samples"])

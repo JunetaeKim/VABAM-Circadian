@@ -10,7 +10,7 @@ representations of one VABAM model to results/exp02/codes/<rep>.npz (key 'z', ro
     <name>_ztheta  both, each block standardised
 
 The inferred theta is the same for every input (exp01), so theta itself carries no information; the theta
-response is what theta adds as a control knob. exp02's analysis code is used unchanged (src/exp02/analyze.py).
+response is what theta adds as a control knob. exp02's analysis code is used unchanged (src/analysis/exp02_analyze.py).
 
 model: a model name in configs/circadian_vabam.yml (checkpoint results/ckpt/<SigType>/<name>.hdf5), or a sweep
 run 'stage/run_id' (checkpoint results/sweep/<stage>/ckpt/<run_id>/model.hdf5). Sweep runs were trained on
@@ -21,7 +21,7 @@ import json
 import numpy as np
 import yaml
 
-from . import vabam_bridge as vb
+from src import vabam_bridge as vb
 
 TAG = "msb_rel_L400_S18"
 SWEEP_THETA = (0.05, 0.25, 0.5, 0.75, 0.95)
@@ -51,7 +51,7 @@ def theta_response(model, sweep_theta=SWEEP_THETA, bs=1024):
     """Returns (z, response, name). response columns: dlogamp at each theta_L != 0.5, then shape corr."""
     import tensorflow as tf
 
-    from .exp01_u2os_cry import generate
+    from src.analysis.exp01_u2os_cry import generate
 
     cfg, mc, ckpt, X01, name = _load(model)
     v = vb.import_vabam(cfg)
@@ -99,8 +99,8 @@ def table(reps=None):
     """Main numbers of results/exp02/<rep>/summary.json (same columns as exp02 compare)."""
     import pandas as pd
 
-    from .exp02 import compare
-    from .exp02.common import RES
+    from src.analysis import exp02_compare as compare
+    from src.data.external import RES
 
     rows = []
     for p in sorted(RES.glob("*/summary.json")):
@@ -150,7 +150,7 @@ def pca_codes(dim=30):
 
 
 def _fast_loo_ridge(X, y, alpha=5.0):
-    """Same result as exp02.analyze.loo_ridge (StandardScaler + Ridge(alpha=5), leave one out), in plain numpy:
+    """Same result as exp02_analyze.loo_ridge (StandardScaler + Ridge(alpha=5), leave one out), in plain numpy:
     about 25x faster because it skips scikit-learn's per-fit overhead (13 tiny fits per drug, 130k drugs x perms)."""
     from scipy.stats import spearmanr
 
@@ -185,8 +185,8 @@ def analyze_missing(n_perm=200, n_random=300, redo=()):
     _fast_loo_ridge (checked to give the same numbers here first) and each step prints its time."""
     import time
 
-    from .exp02 import analyze
-    from .exp02.common import RES
+    from src.analysis import exp02_analyze as analyze
+    from src.data.external import RES
 
     rng = np.random.default_rng(0)
     for _ in range(20):                                  # identical results, or do not swap

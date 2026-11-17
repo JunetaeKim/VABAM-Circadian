@@ -22,7 +22,7 @@ import os
 import random
 import time
 
-from . import vabam_bridge as vb  # before tensorflow
+from src import vabam_bridge as vb  # before tensorflow
 
 import numpy as np
 import pandas as pd

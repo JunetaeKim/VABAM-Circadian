@@ -75,3 +75,29 @@ stages:
     epochs: 800
     patience: 100
     seeds: [0, 1, 2]
+
+  s4:
+    description: theta control range - window 400 vs 500 (filter kernel 33.5 h vs 50.2 h) x cut-off range 6/8/12 h x latent 10/30; MSB population data with random-crop sampling (12 runs, full length). Data and validation split differ from s1-s3, so rank within s4 only.
+    epochs: 800
+    patience: 100
+    seeds: [0]
+    grid:
+      window:
+        L400: {DataSource: msb_rel_L400_S18, CompSize: 200, Sampling: random_crop, CropsPerTrace: 96, BatSize: 1024}
+        L500: {DataSource: msb_rel_L500_S18, CompSize: 200, Sampling: random_crop, CropsPerTrace: 96, BatSize: 1024}
+      FcLimit: {FC6: 0.0277778, FC8: 0.0208333, FC12: 0.0138889}
+      LatDim: {Z10: 10, Z30: 30}
+
+  s5:
+    description: z regularisation - weight of the KL term on z (default 1e-5, never varied before) x 10 per step, on the s4 setting with the best balance (window 400, cut-off 8 h, latent 10); short runs because long training weakens theta (s1 vs s3). 2 seeds (8 runs). Same data and validation split as s4, so compare with s4_L400_FC8_Z10 and rank within s5.
+    epochs: 300
+    patience: 100
+    seeds: [0, 1]
+    grid:
+      base:
+        L400FC8Z10: {DataSource: msb_rel_L400_S18, CompSize: 200, Sampling: random_crop, CropsPerTrace: 96, BatSize: 1024, FcLimit: 0.0208333, LatDim: 10}
+      WZ:
+        WZ1e5: {MnWZ: 0.00001, MxWZ: 0.00001}
+        WZ1e4: {MnWZ: 0.0001, MxWZ: 0.0001}
+        WZ1e3: {MnWZ: 0.001, MxWZ: 0.001}
+        WZ1e2: {MnWZ: 0.01, MxWZ: 0.01}

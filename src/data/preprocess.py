@@ -22,7 +22,7 @@ Preprocessing: detrend -> normalise -> cut into windows of 2-3 circadian cycles 
    both sides.
 
 Usage:
-    python -m src.preprocess --config configs/circadian_vabam.yml
+    python -m src.data.preprocess --config configs/circadian_vabam.yml
 Outputs (data/processed/):
     windows_<tag>.npz      X01 (N, L) float32, Xn (N, L) normalised before scaling, split (N,) str
     windows_<tag>_meta.csv one row per window: trace_id, t_start_h, cell_line, genotype, reporter, ...
@@ -38,8 +38,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from .loader import load_traces, load_msb2025_processed
-from .vabam_bridge import SPINOFF_ROOT, assert_inside_spinoff
+from src.data.loader import load_traces, load_msb2025_processed
+from src.vabam_bridge import SPINOFF_ROOT, assert_inside_spinoff
 
 M_MAX = 2000
 

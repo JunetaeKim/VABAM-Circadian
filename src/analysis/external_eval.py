@@ -18,7 +18,7 @@ import argparse
 import json
 import os
 
-from . import vabam_bridge as vb  # before tensorflow
+from src import vabam_bridge as vb  # before tensorflow
 
 import numpy as np
 import pandas as pd
@@ -36,7 +36,7 @@ def window_index(rec, idx, L):
 def evaluate_model(cfg, name, max_windows, n_sweep, seed):
     from scipy.stats import spearmanr
 
-    from .exp01_u2os_cry import encode_generate, generate, load_parts
+    from src.analysis.exp01_u2os_cry import encode_generate, generate, load_parts
 
     mc = vb.model_config(cfg, name)
     tag = cfg["multi"]["tag"]

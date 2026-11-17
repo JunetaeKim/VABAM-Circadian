@@ -7,11 +7,11 @@ theta in (0, 1) to a cut-off in (0, FcLimit). With 10-min sampling, a period P [
 f = dt_h / P cycles/sample (24 h -> 1/144 = 0.00694).
 
 Usage:
-    python -m src.filter_response --config configs/circadian_vabam.yml
+    python -m src.model.filter_response --config configs/circadian_vabam.yml
 """
 import argparse
 
-from . import vabam_bridge as vb  # must come before tensorflow
+from src import vabam_bridge as vb  # must come before tensorflow
 
 import numpy as np
 import yaml

@@ -31,7 +31,7 @@ preprocess:
     method: sinc
     T_c_h: 48.0                          # cut-off period of the trend (authors' setting)
   normalize:
-    method: relative                     # relative | envelope | zscore  (see src/preprocess.py)
+    method: relative                     # relative | envelope | zscore  (see src/data/preprocess.py)
     envelope_window_h: 48.0
   window:
     length_samples: 400                  # 66.7 h = 2.8 cycles at 24 h (2.2-3.3 cycles for 20-30 h periods)
@@ -49,7 +49,7 @@ preprocess:
 # E2 Nat Commun 2024 traces not duplicated in MSB (GIMEN, SH-SY5Y), E3 HES1 single-cell tracks >= 66.7 h.
 # Strides define the reported window counts (training draws random windows from this pool each epoch).
 # ---------------------------------------------------------------------------------------------
-multi:
+multi: &multi_v1
   tag: multi_v1
   window: 400
   val_frac: 0.10
@@ -67,7 +67,7 @@ multi:
       pre_end_h: 108                   # drug/serum added at 4.5 days = 108 h after imaging start
       post_start_h: 120                # skip the first 12 h after addition
       scale_group: sc
-  external:
+  external: &external_v1
     E1_circascope_RawData7:
       kind: circascope
       files: [data/raw/circascope2021/RawData_7.xlsx]
@@ -87,6 +87,34 @@ multi:
       stride_samples: 3                # 30 min (native 15-30 min)
       scale_group: sc
 
+# multi_v2 = multi_v1 (same training and validation records) + the neuroblastoma panel as a held-out set.
+# Build with:  python run.py multi --block multi_v2      -> data/processed/multi_v2/
+# The panel is never used for training, early stopping or model selection.
+multi_v2:
+  <<: *multi_v1
+  tag: multi_v2
+  lineage_groups: {SY5Y: SKNSH, SKNBE2: SKNBE}     # same parental line / same patient: keep together in statistics
+  external:
+    <<: *external_v1
+    E4_nb2026_new_lines:
+      kind: lumicsv
+      source: nb2026
+      files: [data/raw/cellreports2026_neuroblastoma/Bmal1_equallength.csv, data/raw/cellreports2026_neuroblastoma/Per2_equallength.csv]
+      exclude_cell_lines: [GIMEN, SY5Y]            # all 23 records of these two are value-identical to E2 (data/catalog/records.csv)
+      stride_samples: 1
+      scale_group: pop
+
+# All eight Circa-SCOPE workbooks as one store of raw hourly single-cell traces with their conditions.
+# Build with:  python run.py multi --block circascope_v1      -> data/processed/circascope_v1/
+circascope_v1:
+  kind: circascope_store
+  tag: circascope_v1
+  files: [data/raw/circascope2021/RawData_1.xlsx, data/raw/circascope2021/RawData_2.xlsx, data/raw/circascope2021/RawData_3.xlsx,
+          data/raw/circascope2021/RawData_4.xlsx, data/raw/circascope2021/RawData_5.xlsx, data/raw/circascope2021/RawData_6.xlsx,
+          data/raw/circascope2021/RawData_7.xlsx, data/raw/circascope2021/RawData_8.xlsx]
+  pre_end_h: 108
+  post_start_h: 120
+
 # ---------------------------------------------------------------------------------------------
 # VABAM parameters. Same layout as the official Config/*.yml (Common_Param + Models); keys inside a
 # model override Common_Param. Only what the circadian time scale requires was changed; every other
@@ -97,7 +125,7 @@ multi:
 #   fixed at 0 in the official Encoder, so FcLimit is the range. With 10-min sampling a 24-h rhythm is at
 #   1/144 = 0.00694 cycles/sample. The official FcLimit 1.0 puts every cut-off far above the circadian band:
 #   the LPF gain at 24 h is 1.00 for every theta, i.e. theta would not control anything
-#   (python -m src.filter_response, docs/design_decisions.md).
+#   (python -m src.model.filter_response, docs/design_decisions.md).
 #   FcLimit = dt/8h = 0.0208333 -> cut-off period from infinity (theta->0) down to 8 h (theta->1).
 #   Depth 1 (kernel 201 samples = 33.5 h): LPF gain at 24 h goes 0.17 -> 1.00 and at the 12-h harmonic
 #   0.00 -> 0.96 as theta goes 0.05 -> 0.95, so theta spans the fundamental and its first harmonic.

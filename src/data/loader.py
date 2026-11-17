@@ -27,7 +27,7 @@ MSB 2025, ``processed_lumicycle_data*.xlsx``
 Nat Commun 2024, ``circadian_time_series_data.xlsx`` (Figshare item 24297496; verified 2026-11-16)
     sheets 'raw', 'detrended', 'samples'. 135 of 164 traces are the same recordings as MSB 2025
     (time axis shifted by 6 h); 29 are new (GIMEN, SH-SY5Y). See load_natcomm2024 and
-    src/audit_duplicates.py.
+    src/data/audit.py.
 """
 import argparse
 import re
@@ -171,7 +171,7 @@ def load_msb2025_processed(path, sheet: str = "detrended", time: Optional[np.nda
 
 
 NATCOMM2024_TIME_OFFSET_H = 6.0
-# Verified 2026-11-16 (src/audit_duplicates.py): 135 of 164 traces in circadian_time_series_data.xlsx are
+# Verified 2026-11-16 (src/data/audit.py): 135 of 164 traces in circadian_time_series_data.xlsx are
 # value-identical (max abs diff 0) to MSB 2025 raw_full traces once the NC time axis is shifted by +6.0 h,
 # i.e. NC 'Time' = 0 is 6 h after the start of the LumiCycle recording. Adding the offset puts both sources on
 # the same "hours since start of recording" axis.
@@ -185,7 +185,7 @@ def load_natcomm2024(path, sheet: str = "raw", keep_audit: Optional[str] = None)
     trace_id = Experiment ID (e.g. 20220614_GIMEN_Bmal1_Luc_1); 'Neuroblastoma_' prefixes are dropped.
     One Experiment ID occurs twice (SY5Y_BMAL1_1 and _2 -> 20220614_SY5Y_Bmal1_Luc_2, different values);
     duplicates get the suffix '__<short name>'.
-    keep_audit: CSV from src/audit_duplicates.py; only traces whose status != 'same_recording' are kept.
+    keep_audit: CSV from src/data/audit.py; only traces whose status != 'same_recording' are kept.
     """
     xls = pd.ExcelFile(path, engine="openpyxl")
     df = pd.read_excel(xls, sheet_name=sheet)

@@ -52,34 +52,34 @@ def main():
     model = args.model or cfg.get("default_model", "SKZFC_CIRC_1_30_200")
 
     if args.step == "preprocess":
-        from src import preprocess
+        from src.data import preprocess
         _call(preprocess.main, "preprocess", ["--config", cfg_path] + rest)
     elif args.step == "filters":
-        from src import filter_response
+        from src.model import filter_response
         _call(filter_response.main, "filter_response", ["--config", cfg_path] + rest)
     elif args.step == "sweep":
-        from src import sweep
+        from src.model import sweep
         sweep.main(rest)
     elif args.step == "multi":
-        from src import multisource
+        from src.data import multisource
         _call(multisource.main, "multi", ["--config", cfg_path] + rest)
     elif args.step == "audit":
-        from src import audit_duplicates
-        _call(audit_duplicates.main, "audit", ["--config", cfg_path] + rest)
+        from src.data import audit
+        _call(audit.main, "audit", ["--config", cfg_path] + rest)
     elif args.step == "external":
-        from src import external_eval
+        from src.analysis import external_eval
         models = [args.model] if args.model else []
         _call(external_eval.main, "external", ["--config", cfg_path] + (["--models"] + models if models else [])
               + rest)
     elif args.step == "select":
-        from src import select_models
+        from src.model import select_models
         _call(select_models.main, "select", ["--config", cfg_path] + ([] if args.model is None else
                                                                     ["--models", args.model]) + rest)
     elif args.step in ("train", "all"):
-        from src import train
+        from src.model import train
         _call(train.main, "train", ["--config", cfg_path, "--model", model] + rest)
     if args.step in ("exp01", "all"):
-        from src import exp01_u2os_cry
+        from src.analysis import exp01_u2os_cry
         exp_rest = [a for a in rest if args.step == "exp01" or not a.startswith("--epochs")]
         if args.step == "all":  # train-only options are not passed on; start from a clean Keras session
             exp_rest = []

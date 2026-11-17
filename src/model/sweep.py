@@ -4,7 +4,7 @@ Parameter search engine (configs/sweep.yml). Used from notebooks/03_param_search
 Workers (one process per GPU; worker k of n runs every n-th run of the frozen plan):
     python run.py sweep --stage s1 --worker 0 --nworkers 4 --gpu 0
 Notebook (no TensorFlow needed):
-    from src import sweep
+    from src.model import sweep
     sweep.freeze_plan("s1"); sweep.commands("s1"); sweep.status("s1"); sweep.collect("s1")
 
 Layout (all under results/sweep/<stage>/):
@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from . import vabam_bridge as vb
+from src import vabam_bridge as vb
 
 _LOG_ITEM = re.compile(r"'(\w+)':\s*(?:np\.float\d+\()?\s*([-+]?(?:\d+\.?\d*(?:[eE][-+]?\d+)?|nan|inf))")
 
@@ -152,8 +152,8 @@ def _load_parts(cfg, mc, sig_dim, ckpt):
 def evaluate_run(cfg, scfg, mc, ckpt, eval_overrides=None):
     from scipy.stats import spearmanr
 
-    from .exp01_u2os_cry import encode_generate, generate
-    from .train import load_windows
+    from src.analysis.exp01_u2os_cry import encode_generate, generate
+    from src.model.train import load_windows
 
     sel = {**scfg["selection"], **(eval_overrides or {})}
     rng = np.random.default_rng(0)
@@ -203,7 +203,7 @@ def _done(rd):
 
 
 def train_and_eval(cfg, scfg, run, verbose=2):
-    from .train import fit_model
+    from src.model.train import fit_model
 
     sd = stage_dir(scfg, run["stage"])
     rd = run_dir(scfg, run["stage"], run["run_id"])
@@ -231,7 +231,7 @@ def train_and_eval(cfg, scfg, run, verbose=2):
 
 
 def worker(stage, w, n, gpu=None, verbose=2):
-    from .train import setup_gpu
+    from src.model.train import setup_gpu
 
     cfg, scfg = load_cfgs()
     plan = load_plan(stage, scfg)

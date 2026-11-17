@@ -8,7 +8,7 @@ Sources (all put on a 10-min grid, hours since start of recording):
   circascope2021   single-cell Rev-VNP fluorescence, NIH-3T3 (Manella et al. 2021, Zenodo 5139746),
                    native 1 h -> PCHIP-interpolated to 10 min. Each cell gives two segments that never span the
                    drug addition at 108 h: 'pre' 0-108 h, 'post' 120 h-end (12 h after addition skipped).
-  natcomm2024      LumiCycle traces NOT duplicated in msb2025 (GIMEN, SH-SY5Y; src/audit_duplicates.py)
+  natcomm2024      LumiCycle traces NOT duplicated in msb2025 (GIMEN, SH-SY5Y; src/data/audit.py)
   hes1_2021        single-cell mVenus-Hes1 (MCF7; Sabherwal et al. 2021), tracks >= window length only,
                    native 15/30 min -> PCHIP to 10 min
 
@@ -32,15 +32,17 @@ data/processed/windows_<tag>.npz, windows_<tag>_meta.csv, scaling_<tag>.json.
 """
 import argparse
 import json
+import re
+import zipfile
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
-from .loader import load_msb2025_raw, load_natcomm2024
-from .preprocess import normalise_trace
-from .vabam_bridge import SPINOFF_ROOT, assert_inside_spinoff
+from src.data.loader import load_msb2025_raw, load_natcomm2024, parse_trace_name
+from src.data.preprocess import normalise_trace
+from src.vabam_bridge import SPINOFF_ROOT, assert_inside_spinoff
 
 DT_H = 10.0 / 60.0
 
@@ -130,6 +132,24 @@ def read_circascope(paths, stride, pre_end_h, post_start_h, native_dt_h=1.0):
     return out
 
 
+def read_lumi_csv(paths, source, stride, exclude=()):
+    """LumiCycle tables stored as CSV: 'Time' (h) + one column per record, MSB column naming."""
+    out = []
+    for p in paths:
+        d = pd.read_csv(p)
+        t = d["Time"].to_numpy(float)
+        for c in d.columns[1:]:
+            m = parse_trace_name(c, source)
+            if m["cell_line"] in exclude:
+                continue
+            x = d[c].to_numpy(float)
+            ok = np.isfinite(x)
+            out.append(_record(c, source, c, t[ok], x[ok], label=m["label"], cell_line=m["cell_line"],
+                               genotype=m["genotype"], reporter=m["reporter"], condition=m["reset"], date=m["date"],
+                               modality="population_bioluminescence", native_dt_h=DT_H, stride=stride))
+    return out
+
+
 def read_hes1(path, sheets, min_hours, stride):
     out = []
     xls = pd.ExcelFile(path, engine="openpyxl")
@@ -153,6 +173,107 @@ def read_hes1(path, sheets, min_hours, stride):
     return out
 
 
+# ------------------------------------------------------------------ Circa-SCOPE store (all workbooks, raw hourly)
+def parse_condition(sheet):
+    """Sheet name -> agent, dose, unit, modifier. 'PMA 0.25 uM', 'Dex 100', '(+MF) RS 0.05 %', '1.25uM MF +Dex', 'UT'."""
+    s, mod = sheet.strip(), ""
+    m = re.match(r"\(([+-]MF)\)\s*(.*)", s)
+    if m:
+        mod, s = m.group(1), m.group(2)
+    m = re.match(r"([\d.]+)\s*uM MF \+Dex$", s)
+    if m:
+        return dict(agent="MF", dose=float(m.group(1)), unit="uM", modifier="+Dex")
+    m = re.match(r"^(.*\S)\s+([\d.]+)\s*(uM|mM|nM|%)?$", s)
+    if m:
+        return dict(agent=m.group(1), dose=float(m.group(2)), unit=m.group(3) or "", modifier=mod)
+    return dict(agent=s if s and not s.lower().startswith("sheet") else "unknown", dose=np.nan, unit="", modifier=mod)
+
+
+def _sheet_matrix(z, part, n_rows, n_cols):
+    """Numeric sheet (rows = time points, columns = cells) straight from the sheet XML; None if it is not rectangular."""
+    x = z.read(part).decode("utf8")
+    rows = [re.findall(r"<v>([^<]*)</v>", r) for r in x.split("<row ")[1:]]
+    if len(rows) != n_rows or any(len(r) != n_cols for r in rows):
+        return None
+    return np.array(rows, dtype=np.float64).astype(np.float32)
+
+
+def _rel_amp(M, w=24):
+    """Per cell (rows = time, hourly): SD of (x - trend) / trend with a centred w-hour moving average as trend."""
+    k = np.ones(w) / w
+    T = np.apply_along_axis(lambda v: np.convolve(np.pad(v, (w // 2, w - 1 - w // 2), mode="edge"), k, "valid"), 0, M)
+    R = (M - T) / np.where(T > 0, T, np.nan)
+    return np.nanstd(R, axis=0), R
+
+
+def _synchrony(R):
+    """Mean resultant length of the cells' Hilbert phases, averaged over time (edges dropped)."""
+    X = np.nan_to_num(R - np.nanmean(R, axis=0))
+    n = X.shape[0]
+    h = np.zeros(n)
+    h[0] = 1
+    h[1:(n + 1) // 2] = 2
+    if n % 2 == 0:
+        h[n // 2] = 1
+    ph = np.angle(np.fft.ifft(np.fft.fft(X, axis=0) * h[:, None], axis=0))[6:-6]
+    return float(np.abs(np.exp(1j * ph).mean(axis=1)).mean())
+
+
+def build_circascope_store(cfg, block):
+    """Every workbook -> cells.csv (one row per cell), raw_hourly.npz (cells x hours, as recorded) and
+    conditions.csv (one row per sheet with a model-free summary of the change after the addition at pre_end_h)."""
+    from src.data.audit import xlsx_sheets
+
+    b = cfg[block]
+    out = assert_inside_spinoff(SPINOFF_ROOT / cfg["paths"]["processed"] / b["tag"])
+    out.mkdir(parents=True, exist_ok=True)
+    pre_end, post_start = int(b["pre_end_h"]), int(b["post_start_h"])
+    cells, mats, cond = [], [], []
+    for f in b["files"]:
+        p = SPINOFF_ROOT / f
+        if not p.exists():
+            print("missing, skipped:", f)
+            continue
+        z = zipfile.ZipFile(p)
+        for name, n_rows, n_cols, part in xlsx_sheets(p, parts=True):
+            if n_rows < 100:
+                continue
+            M = _sheet_matrix(z, part, n_rows, n_cols)
+            if M is None:                                  # not rectangular: let pandas fill the gaps with NaN
+                M = pd.read_excel(p, sheet_name=name, header=None).to_numpy(np.float32)
+            c = parse_condition(name)
+            stem = p.stem
+            a_pre, R_pre = _rel_amp(M[12:pre_end])         # first 12 h after the start are left out
+            a_post, R_post = _rel_amp(M[post_start:])
+            ok = np.isfinite(M).all(axis=0) & (M.min(axis=0) > 0)
+            cond.append(dict(file=p.name, sheet=name, **c, n_cells=M.shape[1], n_timepoints=M.shape[0],
+                             n_cells_ok=int(ok.sum()), amp_pre=float(np.nanmedian(a_pre)),
+                             amp_post=float(np.nanmedian(a_post)), amp_ratio=float(np.nanmedian(a_post / a_pre)),
+                             level_ratio=float(np.nanmedian(M[post_start:].mean(0) / M[12:pre_end].mean(0))),
+                             sync_pre=_synchrony(R_pre), sync_post=_synchrony(R_post)))
+            for j in range(M.shape[1]):
+                cells.append(dict(cell_id="%s:%s:c%04d" % (stem, name.strip(), j), file=p.name, sheet=name, **c, col=j,
+                                  n_timepoints=M.shape[0], ok=bool(ok[j]), amp_pre=float(a_pre[j]),
+                                  amp_post=float(a_post[j])))
+            mats.append(M.T)
+            log("  %s / %s: %d cells" % (p.name, name, M.shape[1]))
+    n_t = max(m.shape[1] for m in mats)
+    X = np.full((sum(m.shape[0] for m in mats), n_t), np.nan, np.float32)
+    i = 0
+    for m in mats:
+        X[i:i + m.shape[0], :m.shape[1]] = m
+        i += m.shape[0]
+    cells, cond = pd.DataFrame(cells), pd.DataFrame(cond)
+    cells.to_csv(out / "cells.csv", index=False)
+    cond.to_csv(out / "conditions.csv", index=False)
+    np.savez_compressed(out / "raw_hourly.npz", X=X, dt_h=1.0)
+    json.dump({"tag": b["tag"], "n_cells": int(len(cells)), "n_sheets": int(len(cond)), "n_timepoints": int(n_t),
+               "pre_end_h": pre_end, "post_start_h": post_start, "files": b["files"],
+               "values": "raw fluorescence per cell as published (float32)"},
+              open(out / "store.json", "w", encoding="utf-8"), indent=2)
+    return cells, cond
+
+
 # ------------------------------------------------------------------ build
 def _split_groups(recs, val_frac, seed):
     rng = np.random.default_rng(seed)
@@ -169,8 +290,8 @@ def _split_groups(recs, val_frac, seed):
     return val
 
 
-def build(cfg):
-    mc = cfg["multi"]
+def build(cfg, block="multi"):
+    mc = cfg[block]
     L = int(mc["window"])
     root = SPINOFF_ROOT
     tr = mc["train_sources"]
@@ -203,6 +324,12 @@ def build(cfg):
                                      cs["post_start_h"])
             elif k == "natcomm2024":
                 rr = read_natcomm(root / sp["path"], root / sp["keep_audit"], sp["stride_samples"])
+            elif k == "lumicsv":
+                missing = [p for p in sp["files"] if not (root / p).exists()]
+                if missing:
+                    raise FileNotFoundError(", ".join(missing))
+                rr = read_lumi_csv([root / p for p in sp["files"]], sp["source"], sp["stride_samples"],
+                                   set(sp.get("exclude_cell_lines", [])))
             elif k == "hes1":
                 rr = read_hes1(root / sp["path"], [tuple(s) for s in sp["sheets"]], sp["min_hours"],
                                sp["stride_samples"])
@@ -221,7 +348,7 @@ def build(cfg):
     # QC (fixed before looking at any result): the trend under 'relative' normalisation must stay well above 0,
     # otherwise detrended/trend explodes. Exclude records whose trend minimum < min_trend_ratio x trend median.
     # The trend is computed once per record and reused for normalisation.
-    from .preprocess import sinc_trend
+    from src.data.preprocess import sinc_trend
 
     pre = {"detrend": cfg["preprocess"]["detrend"], "normalize": cfg["preprocess"]["normalize"]}
     thr = float(mc.get("min_trend_ratio", 0.1))
@@ -261,6 +388,8 @@ def build(cfg):
     meta_cols = ["record_id", "source", "group_id", "split", "scale_group", "label", "cell_line", "genotype",
                  "reporter", "condition", "date", "modality", "native_dt_h", "stride", "file", "segment"]
     rec = pd.DataFrame([{c: r.get(c) for c in meta_cols} for r in allrecs])
+    lineage = mc.get("lineage_groups", {})          # models from the same patient / parental line share a group
+    rec["lineage_group"] = [lineage.get(c, c) for c in rec["cell_line"]]
     rec["length"] = lens
     rec["t0_h"] = [r["t"][0] for r in allrecs]
     rec["n_windows"] = [(l - L) // s + 1 for l, s in zip(lens, rec["stride"])]
@@ -339,9 +468,15 @@ def write_compat(cfg, tag, allrecs, rec, q_pop, L, stride=18):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
+    ap.add_argument("--block", default="multi", help="config block to build (multi, multi_v2, ...)")
     args = ap.parse_args()
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
-    rec, cnt, info = build(cfg)
+    if cfg[args.block].get("kind") == "circascope_store":
+        cells, cond = build_circascope_store(cfg, args.block)
+        pd.set_option("display.width", 220)
+        print(cond.groupby(["file", "agent"]).agg(sheets=("sheet", "size"), cells=("n_cells", "sum")).to_string())
+        return
+    rec, cnt, info = build(cfg, args.block)
     pd.set_option("display.width", 200)
     print(cnt.to_string(index=False))
     print(json.dumps({k: info[k] for k in ("q", "fraction_beyond_q", "n_train_pool_windows", "n_val_windows",

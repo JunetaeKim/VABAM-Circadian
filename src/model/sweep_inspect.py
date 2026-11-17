@@ -10,11 +10,11 @@ import json
 import numpy as np
 import pandas as pd
 
-from . import sweep as sw
+from src.model import sweep as sw
 
 
 def _val_windows(cfg, mc):
-    from .train import load_windows
+    from src.model.train import load_windows
 
     X01, _, meta = load_windows(cfg, mc["DataSource"])
     idx = np.where(((meta["split"] == "val") & (meta["cell_line"] != "U2OS")).to_numpy())[0]
@@ -32,7 +32,7 @@ def _model(stage, run_id):
 
 def theta_sweep(parts, theta, z, fc_limit, sweep_theta):
     """Generated signals (centred) for each theta_L in sweep_theta; other theta components as inferred."""
-    from .exp01_u2os_cry import generate
+    from src.analysis.exp01_u2os_cry import generate
 
     gens = []
     for th in sweep_theta:
@@ -45,7 +45,7 @@ def theta_sweep(parts, theta, z, fc_limit, sweep_theta):
 def per_window(stage, run_id, refresh=False):
     from scipy.stats import spearmanr
 
-    from .exp01_u2os_cry import encode_generate
+    from src.analysis.exp01_u2os_cry import encode_generate
 
     cfg, scfg, mc, ckpt, rd = _model(stage, run_id)
     cache = rd / "per_window.csv"
@@ -102,7 +102,7 @@ def all_per_window(stage, configs=None, refresh=False):
 
 def examples(stage, run_ids, n_windows=3, seed=1):
     """Arrays for plotting: input, reconstruction and theta_L sweep for the same windows in every run."""
-    from .exp01_u2os_cry import encode_generate
+    from src.analysis.exp01_u2os_cry import encode_generate
 
     cfg, scfg = sw.load_cfgs()
     out = {}

@@ -85,20 +85,28 @@ VABAM-Circadian/
 │   └── sweep.yml           parameter search
 ├── src/
 │   ├── vabam_bridge.py     import of the official code, write-path guard
-│   ├── loader.py           LumiCycle loaders
-│   ├── preprocess.py       detrending, normalisation, windows (configuration A)
-│   ├── multisource.py      multi-source pool and external sets (configuration B)
-│   ├── train.py            VABAM training (official ModelCall / DCLCall)
-│   ├── train_baseline.py   single-z VAEs from the official benchmarks
-│   ├── filter_response.py  filter frequency response vs FcLimit
-│   ├── select_models.py    label-free selection
-│   ├── external_eval.py    label-free evaluation on external sets
-│   ├── audit_duplicates.py duplicate audit between datasets
-│   ├── exp01_u2os_cry.py   clock-gene knockout experiment
-│   ├── sweep.py, sweep_inspect.py, viz.py   parameter search and figures
-│   ├── repmap.py           θ-response / z / z+θ representations
-│   └── exp02/              downstream evaluation (phenotypes, drugs, transcriptome bridge, survival)
-├── notebooks/              03 search, 04 stage analysis, 05 θ+z vs single z
+│   ├── viz.py              figures (parameter search, README overview)
+│   ├── data/
+│   │   ├── loader.py       LumiCycle loaders
+│   │   ├── preprocess.py   detrending, normalisation, windows (configuration A)
+│   │   ├── multisource.py  multi-source pool, held-out sets, Circa-SCOPE store (configuration B)
+│   │   ├── audit.py        duplicate audit between datasets, catalogue of all raw sources
+│   │   └── external.py     public downloads; harmonised drug-response, expression and cohort tables
+│   ├── model/
+│   │   ├── train.py        VABAM training (official ModelCall / DCLCall)
+│   │   ├── baseline.py     single-z VAEs from the official benchmarks
+│   │   ├── sweep.py, sweep_inspect.py   parameter search and its per-window read-outs
+│   │   ├── select_models.py             label-free selection
+│   │   └── filter_response.py           filter frequency response vs FcLimit
+│   └── analysis/
+│       ├── exp01_u2os_cry.py   clock-gene knockout experiment; encode / generate helpers
+│       ├── external_eval.py    label-free evaluation on held-out sets
+│       ├── damping_test.py     does lowering θ reproduce the amplitude loss within a recording?
+│       ├── band_stability.py   reference-band clock stability
+│       ├── repmap.py           θ-response / z / z+θ representations
+│       └── exp02_analyze.py, exp02_compare.py   downstream evaluation (phenotypes, drugs, transcriptome bridge, survival)
+├── notebooks/              03 search, 04 stage analysis, 05 θ+z vs single z, 06 README figure, 07 damping test,
+│                           08 band stability, 09 data catalogue
 ├── docs/design_decisions.md
 └── data/                   raw data (primary dataset included) and data/README.md
 ```

@@ -4,6 +4,7 @@ circadian phenotypes and patient-level expression better than a mixed single-z V
 Runs from any working directory; reads and writes inside the repository only.
 
     python run_exp02.py fetch                                  # public data -> data/raw/external (~1.4 GB, once)
+    python run_exp02.py tables                                 # harmonised drug-response and expression tables -> data/processed/external_v1
     python run_exp02.py vabam                                  # analyze VABAM z (needs results/exp01_<model>/codes_all_windows.npz)
     python run_exp02.py pca                                    # linear floor: PCA-30 of the raw windows (no training)
     python run_exp02.py baseline --type BaseVAE --seed 0 --gpu 0   # train + encode a single-z VAE (GPU)
@@ -27,7 +28,7 @@ if HERE not in sys.path:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["fetch", "vabam", "pca", "baseline", "analyze", "compare", "all"])
+    ap.add_argument("step", choices=["fetch", "tables", "vabam", "pca", "baseline", "analyze", "compare", "all"])
     ap.add_argument("--model", default="SKZFC_CIRC_1_30_200")
     ap.add_argument("--type", default="BaseVAE", choices=["BaseVAE", "TCVAE", "ConVAE"])
     ap.add_argument("--seed", type=int, default=0)
@@ -40,7 +41,15 @@ def main():
     ap.add_argument("--skip", nargs="*", default=[])
     a = ap.parse_args()
 
-    from src.exp02 import fetch_external, analyze, compare
+    if a.step == "tables":                      # needs pandas and openpyxl only
+        from src.data import external as fetch_external
+        fetch_external.tables()
+        fetch_external.cohorts()
+        return
+
+    from src.data import external as fetch_external
+    from src.analysis import exp02_analyze as analyze
+    from src.analysis import exp02_compare as compare
 
     def ana(rep, codes=None):
         args = ["--rep", rep, "--n_perm", str(a.n_perm), "--n_random", str(a.n_random)]
@@ -64,7 +73,7 @@ def main():
         ana("PCA30_raw")
 
     def baseline(typ, seed):
-        from src import train_baseline
+        from src.model import baseline as train_baseline
         args = ["--type", typ, "--seed", str(seed)]
         args += ["--gpu", a.gpu] if a.gpu is not None else []
         args += ["--epochs", str(a.epochs)] if a.epochs else []
